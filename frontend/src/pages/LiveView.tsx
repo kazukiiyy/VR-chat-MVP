@@ -24,9 +24,15 @@ type LiveViewProps = {
   uiVisible: boolean;
 };
 
+type PipelineStatusPayload = {
+  running?: boolean;
+};
+
 export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
   const ws = useMemo(() => new VTuberWebSocket(), []);
   const [connected, setConnected] = useState(false);
+  const [pipelineRunning, setPipelineRunning] = useState<boolean | null>(null);
+  const [pipelineStatusStale, setPipelineStatusStale] = useState(false);
   const [emotion, setEmotion] = useState('neutral');
   const [audioBase64, setAudioBase64] = useState<string | null>(null);
   const [lipSyncValue, setLipSyncValue] = useState(0);
@@ -105,14 +111,46 @@ export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
     };
   }, [ws]);
 
+  const applyPipelineStatus = useCallback((payload: PipelineStatusPayload): void => {
+    if (typeof payload.running === 'boolean') {
+      setPipelineRunning(payload.running);
+      setPipelineStatusStale(false);
+    }
+  }, []);
+
+  const fetchPipelineStatus = useCallback(async (): Promise<void> => {
+    try {
+      const response = await fetch(`${BACKEND_BASE_URL}/status`);
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+      const data = (await response.json()) as PipelineStatusPayload;
+      applyPipelineStatus(data);
+    } catch (error) {
+      console.error('Failed to fetch pipeline status', error);
+      setPipelineStatusStale(true);
+    }
+  }, [applyPipelineStatus]);
+
+  useEffect(() => {
+    void fetchPipelineStatus();
+    const intervalId = window.setInterval(() => {
+      void fetchPipelineStatus();
+    }, 2000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchPipelineStatus]);
+
   const postControl = async (path: '/start' | '/stop'): Promise<void> => {
     try {
       const response = await fetch(`${BACKEND_BASE_URL}${path}`, { method: 'POST' });
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
+      const data = (await response.json()) as PipelineStatusPayload;
+      applyPipelineStatus(data);
     } catch (error) {
       console.error(`Failed to call ${path}`, error);
+      void fetchPipelineStatus();
     }
   };
 
@@ -143,7 +181,41 @@ export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={connected ? styles.connected : styles.disconnected} />
+        <div
+          style={connected ? styles.connected : styles.disconnected}
+          title={connected ? 'バックエンド WebSocket 接続済み' : 'WebSocket 未接続'}
+          aria-label={connected ? 'バックエンド接続済み' : 'バックエンド未接続'}
+        />
+        <div
+          style={{
+            ...styles.liveStatusBadge,
+            ...(pipelineStatusStale
+              ? styles.liveStatusUnknown
+              : pipelineRunning === true
+                ? styles.liveStatusOn
+                : pipelineRunning === false
+                  ? styles.liveStatusOff
+                  : styles.liveStatusPending),
+          }}
+          title={
+            pipelineStatusStale
+              ? 'パイプライン状態を取得できません（バックエンドが起動しているか確認してください）'
+              : pipelineRunning === true
+                ? 'コメント処理パイプラインは稼働中です'
+                : pipelineRunning === false
+                  ? 'パイプラインは停止中です（▶ で開始）'
+                  : '状態を取得しています…'
+          }
+          aria-live="polite"
+        >
+          {pipelineStatusStale
+            ? 'ライブ: ?'
+            : pipelineRunning === true
+              ? 'ライブ: 稼働中'
+              : pipelineRunning === false
+                ? 'ライブ: 停止'
+                : 'ライブ: …'}
+        </div>
         <button type="button" style={styles.button} onClick={() => void postControl('/start')}>
           ▶
         </button>
@@ -169,12 +241,41 @@ const styles: Record<string, CSSProperties> = {
     left: 16,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     padding: '6px 8px',
     borderRadius: 8,
     background: 'rgba(0, 0, 0, 0.45)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     transition: 'opacity 300ms ease',
+  },
+  liveStatusBadge: {
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+    padding: '3px 8px',
+    borderRadius: 999,
+    whiteSpace: 'nowrap',
+    border: '1px solid transparent',
+  },
+  liveStatusOn: {
+    color: '#c8ffd4',
+    background: 'rgba(46, 160, 67, 0.25)',
+    borderColor: 'rgba(126, 231, 135, 0.45)',
+  },
+  liveStatusOff: {
+    color: '#c9d1d9',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  liveStatusPending: {
+    color: '#b1bac4',
+    background: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  liveStatusUnknown: {
+    color: '#ffdfb5',
+    background: 'rgba(210, 153, 34, 0.22)',
+    borderColor: 'rgba(255, 196, 112, 0.35)',
   },
   connected: {
     width: 8,

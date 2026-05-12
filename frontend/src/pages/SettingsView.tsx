@@ -1,9 +1,11 @@
 import { type CSSProperties, useEffect, useState } from 'react';
 
-type TabName = 'llm' | 'tts' | 'live2d';
+type TabName = 'llm' | 'tts' | 'youtube' | 'live2d';
 type LlmProviderName = 'claude' | 'openai' | 'ollama';
 type TtsProviderName = 'voicevox' | 'stylebertvits2' | 'elevenlabs';
 type ModelEntry = { name: string; path: string };
+type VoicevoxSpeakerStyle = { name: string; id: number };
+type VoicevoxSpeaker = { name: string; styles: VoicevoxSpeakerStyle[] };
 
 type YoutubeConfig = {
   stream_id: string;
@@ -48,9 +50,16 @@ type AppConfig = {
 
 type StyleRow = TtsStyle & { name: string };
 
-const tabNames: TabName[] = ['llm', 'tts', 'live2d'];
+const tabNames: TabName[] = ['llm', 'tts', 'youtube', 'live2d'];
 const llmProviderNames: LlmProviderName[] = ['claude', 'openai', 'ollama'];
 const ttsProviderNames: TtsProviderName[] = ['voicevox', 'stylebertvits2', 'elevenlabs'];
+
+const tabLabels: Record<TabName, string> = {
+  llm: 'LLM',
+  tts: 'TTS',
+  youtube: 'YouTube',
+  live2d: 'Live2D',
+};
 
 const defaultAppConfig: AppConfig = {
   youtube: {
@@ -106,6 +115,30 @@ const readString = (value: unknown, fallback = ''): string =>
 
 const readNumber = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+function extractVideoId(input: string): string {
+  const trimmedInput = input.trim();
+
+  if (!trimmedInput) {
+    return '';
+  }
+
+  const patterns = [
+    /[?&]v=([^&]+)/,
+    /youtu\.be\/([^?]+)/,
+    /\/live\/([^?]+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = trimmedInput.match(pattern);
+
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return trimmedInput;
+}
 
 const isLlmProviderName = (value: unknown): value is LlmProviderName =>
   value === 'claude' || value === 'openai' || value === 'ollama';
@@ -243,6 +276,16 @@ const getStyleValidationError = (rows: StyleRow[]): string => {
   return '';
 };
 
+const findCharacterName = (speakerId: number, speakers: VoicevoxSpeaker[]): string => {
+  for (const speaker of speakers) {
+    if (speaker.styles.some((style) => style.id === speakerId)) {
+      return speaker.name;
+    }
+  }
+
+  return speakers[0]?.name ?? '';
+};
+
 export function SettingsView(): JSX.Element {
   const [activeName, setActiveName] = useState<TabName>('llm');
   const [appConfig, setAppConfig] = useState<AppConfig>(defaultAppConfig);
@@ -251,11 +294,13 @@ export function SettingsView(): JSX.Element {
   );
   const [styleRows, setStyleRows] = useState<StyleRow[]>(stylesToRows(defaultAppConfig.tts.styles));
   const [models, setModels] = useState<ModelEntry[]>([]);
+  const [voicevoxSpeakers, setVoicevoxSpeakers] = useState<VoicevoxSpeaker[]>([]);
   const [activeModelPath, setActiveModelPath] = useState('');
   const [wallpaperPath, setWallpaperPath] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [previewingIndex, setPreviewingIndex] = useState<number | null>(null);
 
   const getActiveModelPath = async (): Promise<string> => {
     if (!window.electronAPI) {
@@ -292,6 +337,20 @@ export function SettingsView(): JSX.Element {
     }
   };
 
+  const loadVoicevoxSpeakers = async (): Promise<void> => {
+    try {
+      const res = await fetch('http://localhost:8000/voicevox/speakers');
+
+      if (res.ok) {
+        setVoicevoxSpeakers((await res.json()) as VoicevoxSpeaker[]);
+      } else {
+        setVoicevoxSpeakers([]);
+      }
+    } catch {
+      setVoicevoxSpeakers([]);
+    }
+  };
+
   useEffect(() => {
     const loadConfig = async (): Promise<void> => {
       setLoading(true);
@@ -309,6 +368,7 @@ export function SettingsView(): JSX.Element {
         setAppConfig(parsedConfig);
         setResponseSchemaText(`${JSON.stringify(parsedConfig.llm.response_schema, null, 2)}\n`);
         setStyleRows(stylesToRows(parsedConfig.tts.styles));
+        void loadVoicevoxSpeakers();
         await loadModels();
       } catch (readError) {
         console.error('Failed to read app config', readError);
@@ -339,8 +399,16 @@ export function SettingsView(): JSX.Element {
       }
 
       const responseSchema = JSON.parse(responseSchemaText);
+      const pollingIntervalSec = Number.isFinite(appConfig.youtube.polling_interval_sec)
+        ? appConfig.youtube.polling_interval_sec
+        : defaultAppConfig.youtube.polling_interval_sec;
       const nextConfig: AppConfig = {
         ...appConfig,
+        youtube: {
+          ...appConfig.youtube,
+          stream_id: extractVideoId(appConfig.youtube.stream_id),
+          polling_interval_sec: Math.max(1, pollingIntervalSec),
+        },
         llm: {
           ...appConfig.llm,
           response_schema: responseSchema,
@@ -512,6 +580,34 @@ export function SettingsView(): JSX.Element {
     setStyleRows((current) => current.filter((_, rowIndex) => rowIndex !== index));
   };
 
+  const previewVoice = async (speakerId: number, index: number): Promise<void> => {
+    const endpoint = appConfig.tts.providers.voicevox.endpoint;
+    setPreviewingIndex(index);
+    try {
+      const testText = 'テスト音声です。よろしくお願いします。';
+      const audioQueryRes = await fetch(
+        `${endpoint}/audio_query?text=${encodeURIComponent(testText)}&speaker=${speakerId}`,
+        { method: 'POST' },
+      );
+      if (!audioQueryRes.ok) return;
+      const audioQuery = await audioQueryRes.json();
+      const synthesisRes = await fetch(`${endpoint}/synthesis?speaker=${speakerId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
+        body: JSON.stringify(audioQuery),
+      });
+      if (!synthesisRes.ok) return;
+      const blob = await synthesisRes.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      void audio.play();
+      audio.onended = () => URL.revokeObjectURL(url);
+    } catch {
+    } finally {
+      setPreviewingIndex(null);
+    }
+  };
+
   const renderLlmProviderFields = (): JSX.Element => {
     const activeProvider = appConfig.llm.active;
 
@@ -661,57 +757,54 @@ export function SettingsView(): JSX.Element {
     </div>
   );
 
-  const renderTtsPanel = (): JSX.Element => (
-    <div style={styles.formPanel}>
-      <div style={styles.providerTabs}>
-        {ttsProviderNames.map((name) => (
-          <button
-            key={name}
-            type="button"
-            style={appConfig.tts.active === name ? styles.activeProviderButton : styles.providerButton}
-            onClick={() =>
-              setAppConfig((current) => ({
-                ...current,
-                tts: { ...current.tts, active: name },
-              }))
-            }
-            disabled={loading}
-          >
-            {ttsProviderLabels[name]}
-          </button>
-        ))}
-      </div>
+  const renderTtsPanel = (): JSX.Element => {
+    const hasVoicevoxSpeakerSelect = appConfig.tts.active === 'voicevox' && voicevoxSpeakers.length > 0;
 
-      <div style={styles.section}>
-        <h2 style={styles.sectionTitle}>{ttsProviderLabels[appConfig.tts.active]} の設定</h2>
-        {renderTtsProviderFields()}
-      </div>
-
-      <div style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>音声スタイル</h2>
-          <button type="button" style={styles.addButton} onClick={addStyle} disabled={loading}>
-            + スタイルを追加
-          </button>
+    return (
+      <div style={styles.formPanel}>
+        <div style={styles.providerTabs}>
+          {ttsProviderNames.map((name) => (
+            <button
+              key={name}
+              type="button"
+              style={appConfig.tts.active === name ? styles.activeProviderButton : styles.providerButton}
+              onClick={() =>
+                setAppConfig((current) => ({
+                  ...current,
+                  tts: { ...current.tts, active: name },
+                }))
+              }
+              disabled={loading}
+            >
+              {ttsProviderLabels[name]}
+            </button>
+          ))}
         </div>
-        <div style={styles.styleTable}>
-          {styleRows.map((row, index) => (
-            <div key={`${row.name}-${index}`} style={styles.styleRow}>
-              <input
-                type="text"
-                value={row.name}
-                onChange={(event) => updateStyleRow(index, { ...row, name: event.target.value })}
-                disabled={loading}
-                style={styles.styleNameInput}
-                aria-label="Style name"
-              />
-              {(['speaker_id', 'speed', 'pitch', 'volume', 'intonation'] as const).map((fieldName) => (
+
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>{ttsProviderLabels[appConfig.tts.active]} の設定</h2>
+          {renderTtsProviderFields()}
+        </div>
+
+        <div style={styles.section}>
+          <div style={styles.sectionHeader}>
+            <h2 style={styles.sectionTitle}>音声スタイル</h2>
+            <button type="button" style={styles.addButton} onClick={addStyle} disabled={loading}>
+              + スタイルを追加
+            </button>
+          </div>
+          <div style={styles.styleTable}>
+            {styleRows.map((row, index) => {
+              const characterName = findCharacterName(row.speaker_id, voicevoxSpeakers);
+              const characterStyles =
+                voicevoxSpeakers.find((speaker) => speaker.name === characterName)?.styles ?? [];
+              const numberFields = (['speed', 'pitch', 'volume', 'intonation'] as const).map((fieldName) => (
                 <label key={fieldName} style={styles.compactFieldLabel}>
                   {fieldName}
                   <input
                     type="number"
                     value={row[fieldName]}
-                    step={fieldName === 'speaker_id' ? 1 : 0.1}
+                    step={0.1}
                     onChange={(event) =>
                       updateStyleRow(index, {
                         ...row,
@@ -722,19 +815,191 @@ export function SettingsView(): JSX.Element {
                     style={styles.numberInput}
                   />
                 </label>
-              ))}
-              <button
-                type="button"
-                style={styles.deleteButton}
-                onClick={() => removeStyle(index)}
-                disabled={loading}
-                aria-label={`${row.name} を削除`}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+              ));
+
+              if (hasVoicevoxSpeakerSelect) {
+                return (
+                  <div
+                    key={`${row.name}-${index}`}
+                    style={{
+                      ...styles.styleRow,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'stretch',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={styles.voicevoxStyleRowTop}>
+                      <input
+                        type="text"
+                        value={row.name}
+                        onChange={(event) => updateStyleRow(index, { ...row, name: event.target.value })}
+                        disabled={loading}
+                        style={{ ...styles.styleNameInput, flex: 1 }}
+                        aria-label="Style name"
+                      />
+                      <button
+                        type="button"
+                        style={styles.previewButton}
+                        onClick={() => void previewVoice(row.speaker_id, index)}
+                        disabled={loading || previewingIndex === index}
+                        aria-label={`${row.name} を試聴`}
+                      >
+                        {previewingIndex === index ? '…' : '🔊'}
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.deleteButton}
+                        onClick={() => removeStyle(index)}
+                        disabled={loading}
+                        aria-label={`${row.name} を削除`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div style={styles.voicevoxStyleRowBottom}>
+                      <div style={styles.characterField}>
+                        <span style={styles.characterLabel}>キャラクター</span>
+                        <span style={styles.characterName}>{characterName}</span>
+                        <select
+                          value={characterName}
+                          onChange={(event) => {
+                            const speaker = voicevoxSpeakers.find((speaker) => speaker.name === event.target.value);
+
+                            if (speaker && speaker.styles.length > 0) {
+                              updateStyleRow(index, { ...row, speaker_id: speaker.styles[0].id });
+                            }
+                          }}
+                          disabled={loading}
+                          style={styles.characterSelect}
+                        >
+                          {voicevoxSpeakers.map((speaker) => (
+                            <option key={speaker.name} value={speaker.name}>
+                              {speaker.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <label style={styles.compactFieldLabel}>
+                        スタイル
+                        <select
+                          value={row.speaker_id}
+                          onChange={(event) =>
+                            updateStyleRow(index, { ...row, speaker_id: Number(event.target.value) })
+                          }
+                          disabled={loading}
+                          style={styles.select}
+                        >
+                          {characterStyles.map((style) => (
+                            <option key={style.id} value={style.id}>
+                              {style.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {numberFields}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={`${row.name}-${index}`}
+                  style={{
+                    ...styles.styleRow,
+                    gridTemplateColumns: 'minmax(130px, 1.2fr) repeat(5, minmax(88px, 1fr)) 34px',
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={row.name}
+                    onChange={(event) => updateStyleRow(index, { ...row, name: event.target.value })}
+                    disabled={loading}
+                    style={styles.styleNameInput}
+                    aria-label="Style name"
+                  />
+                  <label style={styles.compactFieldLabel}>
+                    speaker_id
+                    <input
+                      type="number"
+                      value={row.speaker_id}
+                      step={1}
+                      onChange={(event) =>
+                        updateStyleRow(index, {
+                          ...row,
+                          speaker_id: Number.isFinite(event.target.valueAsNumber) ? event.target.valueAsNumber : 0,
+                        })
+                      }
+                      disabled={loading}
+                      style={styles.numberInput}
+                    />
+                  </label>
+                  {numberFields}
+                  <button
+                    type="button"
+                    style={styles.deleteButton}
+                    onClick={() => removeStyle(index)}
+                    disabled={loading}
+                    aria-label={`${row.name} を削除`}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
+      </div>
+    );
+  };
+
+  const renderYoutubePanel = (): JSX.Element => (
+    <div style={styles.formPanel}>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>YouTube 設定</h2>
+        <div style={styles.fieldGrid}>
+          <label style={styles.fieldLabel}>
+            Stream URL / Video ID
+            <input
+              type="text"
+              value={appConfig.youtube.stream_id}
+              placeholder="https://www.youtube.com/watch?v=xxxxxxxxxx"
+              onChange={(event) =>
+                setAppConfig((current) => ({
+                  ...current,
+                  youtube: { ...current.youtube, stream_id: event.target.value },
+                }))
+              }
+              disabled={loading}
+              style={styles.input}
+            />
+            <span style={styles.helpText}>URLまたは動画ID（例: dQw4w9WgXcQ）を入力</span>
+          </label>
+          <label style={styles.fieldLabel}>
+            ポーリング間隔 (秒)
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={appConfig.youtube.polling_interval_sec}
+              onChange={(event) =>
+                setAppConfig((current) => ({
+                  ...current,
+                  youtube: {
+                    ...current.youtube,
+                    polling_interval_sec: Number.isFinite(event.target.valueAsNumber)
+                      ? event.target.valueAsNumber
+                      : defaultAppConfig.youtube.polling_interval_sec,
+                  },
+                }))
+              }
+              disabled={loading}
+              style={styles.input}
+            />
+          </label>
+        </div>
+        <div style={styles.envNotice}>YouTube API キーは .env の YOUTUBE_API_KEY で設定してください</div>
       </div>
     </div>
   );
@@ -820,19 +1085,23 @@ export function SettingsView(): JSX.Element {
               if (name === 'live2d') {
                 void loadModels();
               }
+              if (name === 'tts') {
+                void loadVoicevoxSpeakers();
+              }
             }}
           >
-            {name === 'live2d' ? 'Live2D' : name.toUpperCase()}
+            {tabLabels[name]}
           </button>
         ))}
       </div>
 
       {activeName === 'llm' ? renderLlmPanel() : null}
       {activeName === 'tts' ? renderTtsPanel() : null}
+      {activeName === 'youtube' ? renderYoutubePanel() : null}
       {activeName === 'live2d' ? renderLive2dPanel() : null}
 
       <div style={styles.footer}>
-        {activeName !== 'live2d' ? (
+        {activeName === 'llm' || activeName === 'tts' || activeName === 'youtube' ? (
           <button type="button" style={styles.saveButton} onClick={() => void saveAppConfig()} disabled={loading}>
             Save
           </button>
@@ -1025,6 +1294,54 @@ const styles: Record<string, CSSProperties> = {
     color: '#e7ebf2',
     fontSize: 13,
   },
+  select: {
+    height: 32,
+    minWidth: 0,
+    borderRadius: 6,
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    outline: 'none',
+    padding: '0 8px',
+    background: '#101418',
+    color: '#e7ebf2',
+    fontSize: 13,
+  },
+  voicevoxStyleRowTop: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  voicevoxStyleRowBottom: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  characterField: {
+    display: 'grid',
+    gap: 4,
+    minWidth: 100,
+  },
+  characterLabel: {
+    color: '#95a1b2',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  characterName: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 700,
+  },
+  characterSelect: {
+    height: 28,
+    minWidth: 100,
+    borderRadius: 6,
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    outline: 'none',
+    padding: '0 8px',
+    background: '#101418',
+    color: '#95a1b2',
+    fontSize: 11,
+  },
   addButton: {
     height: 32,
     padding: '0 12px',
@@ -1033,6 +1350,17 @@ const styles: Record<string, CSSProperties> = {
     background: '#1d3b63',
     color: '#ffffff',
     cursor: 'pointer',
+  },
+  previewButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    border: '1px solid rgba(255, 255, 255, 0.16)',
+    background: '#222a36',
+    color: '#e7ebf2',
+    cursor: 'pointer',
+    fontSize: 14,
+    lineHeight: 1,
   },
   deleteButton: {
     width: 32,
@@ -1130,6 +1458,11 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     color: '#95a1b2',
     fontSize: 13,
+  },
+  helpText: {
+    color: '#95a1b2',
+    fontSize: 12,
+    fontWeight: 400,
   },
   footer: {
     display: 'flex',
