@@ -1,0 +1,34 @@
+{
+  "youtube": {
+    "api_key": "",
+    "stream_id": "",
+    "polling_interval_sec": 5
+  },
+  "llm": {
+    "active": "claude",
+    "system_prompt": "あなたはVTuberのAIアシスタントです。視聴者のコメントに明るく返答してください。",
+    "response_schema": {
+      "text": "視聴者への返答",
+      "emotion": "happy | sad | angry | surprised | neutral",
+      "voice_style": "normal | excited | whisper"
+    },
+    "providers": {
+      "claude": { "api_key": "", "model": "claude-opus-4-6" },
+      "openai": { "api_key": "", "model": "gpt-4o" },
+      "ollama": { "endpoint": "http://localhost:11434", "model": "llama3" }
+    }
+  },
+  "tts": {
+    "active": "voicevox",
+    "providers": {
+      "voicevox": { "endpoint": "http://localhost:50021" },
+      "stylebertvits2": { "endpoint": "http://localhost:5000" },
+      "elevenlabs": { "api_key": "" }
+    },
+    "styles": {
+      "normal":  { "speaker_id": 3, "speed": 1.0, "pitch": 0.0, "volume": 1.0, "intonation": 1.0 },
+      "excited": { "speaker_id": 3, "speed": 1.2, "pitch": 0.1, "volume": 1.1, "intonation": 1.3 },
+      "whisper": { "speaker_id": 3, "speed": 0.9, "pitch": -0.1, "volume": 0.8, "intonation": 0.7 }
+    }
+  }
+}

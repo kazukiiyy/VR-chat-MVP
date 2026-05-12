@@ -1,0 +1,27 @@
+{
+  "name": "vtuber-live-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "electron:dev": "tsc -p tsconfig.electron.json && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
+    "electron": "npm run build && electron .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "pixi-live2d-display": "^0.4",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "electron": "^30",
+    "electron-builder": "^24",
+    "typescript": "^5",
+    "vite": "^5"
+  }
+}
