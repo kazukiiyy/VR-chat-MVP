@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 
 export interface CommentItem {
+  id: number;
   author: string;
   text: string;
   reply: string;
@@ -12,31 +13,35 @@ interface CommentOverlayProps {
 
 export function CommentOverlay({ comments }: CommentOverlayProps): JSX.Element {
   const visibleComments = useMemo(() => comments.slice(-5), [comments]);
-  const firstVisibleIndex = comments.length - visibleComments.length;
-  const latestCommentKey =
-    comments.length > 0 ? commentKey(comments[comments.length - 1], comments.length - 1) : null;
-  const [visibleCommentKey, setVisibleCommentKey] = useState<string | null>(latestCommentKey);
+  const latestCommentId = comments.length > 0 ? comments[comments.length - 1].id : null;
+  const [visibleCommentId, setVisibleCommentId] = useState<number | null>(latestCommentId);
 
   useEffect(() => {
-    if (!latestCommentKey) {
-      setVisibleCommentKey(null);
+    if (!latestCommentId) {
+      setVisibleCommentId(null);
       return;
     }
 
     const frameId = requestAnimationFrame(() => {
-      setVisibleCommentKey(latestCommentKey);
+      setVisibleCommentId(latestCommentId);
     });
     return () => cancelAnimationFrame(frameId);
-  }, [latestCommentKey]);
+  }, [latestCommentId]);
 
   return (
     <div style={styles.root}>
-      {visibleComments.map((comment, index) => {
-        const key = commentKey(comment, firstVisibleIndex + index);
-        const isEntering = key === latestCommentKey && key !== visibleCommentKey;
+      {visibleComments.map((comment) => {
+        const isEntering = comment.id === latestCommentId && comment.id !== visibleCommentId;
         return (
-          <div key={key} style={{ ...styles.item, opacity: isEntering ? 0 : 1 }}>
-            <div style={styles.meta}>{comment.author}</div>
+          <div
+            key={comment.id}
+            style={{
+              ...styles.item,
+              opacity: isEntering ? 0 : 1,
+              transform: isEntering ? 'translateY(14px)' : 'translateY(0)',
+            }}
+          >
+            <div style={styles.author}>{comment.author}</div>
             <div style={styles.text}>{comment.text}</div>
             <div style={styles.reply}>{comment.reply}</div>
           </div>
@@ -46,48 +51,48 @@ export function CommentOverlay({ comments }: CommentOverlayProps): JSX.Element {
   );
 }
 
-function commentKey(comment: CommentItem, index: number): string {
-  return `${comment.author}-${comment.text}-${index}`;
-}
-
 const styles: Record<string, CSSProperties> = {
   root: {
     position: 'absolute',
     right: 24,
     bottom: 24,
-    width: 'min(380px, calc(100vw - 48px))',
+    width: 'min(360px, calc(100vw - 32px))',
     maxHeight: '58vh',
     display: 'flex',
     flexDirection: 'column-reverse',
-    gap: 10,
+    gap: 8,
     pointerEvents: 'none',
     overflow: 'hidden',
   },
   item: {
     padding: '12px 14px',
-    borderRadius: 8,
-    background: 'rgba(18, 23, 30, 0.82)',
+    borderRadius: 12,
+    background: 'rgba(10, 14, 20, 0.55)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     color: '#f6f8fb',
     opacity: 1,
-    transition: 'opacity 260ms ease-out',
+    transition: 'opacity 300ms ease-out, transform 300ms ease-out',
   },
-  meta: {
-    color: '#8bb7ff',
+  author: {
+    color: '#7dd3fc',
     fontSize: 12,
     fontWeight: 700,
-    marginBottom: 4,
+    marginBottom: 3,
+    letterSpacing: '0.02em',
   },
   text: {
+    color: '#f0f4f8',
     fontSize: 14,
-    lineHeight: 1.45,
+    lineHeight: 1.5,
     wordBreak: 'break-word',
   },
   reply: {
     marginTop: 8,
     paddingTop: 8,
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-    color: '#d8dee8',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+    color: '#94a3b8',
     fontSize: 13,
     lineHeight: 1.45,
     wordBreak: 'break-word',

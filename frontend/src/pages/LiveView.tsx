@@ -6,6 +6,7 @@ import { type ResponseMessage, VTuberWebSocket } from '../lib/websocket';
 
 const DEFAULT_WS_URL = 'ws://localhost:8000/ws';
 const BACKEND_BASE_URL = 'http://localhost:8000';
+let commentIdCounter = 0;
 
 const defaultAvatarConfig: AvatarConfig = {
   model_path: './models/your_model/model.model3.json',
@@ -19,7 +20,11 @@ const defaultAvatarConfig: AvatarConfig = {
   },
 };
 
-export function LiveView(): JSX.Element {
+type LiveViewProps = {
+  uiVisible: boolean;
+};
+
+export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
   const ws = useMemo(() => new VTuberWebSocket(), []);
   const [connected, setConnected] = useState(false);
   const [emotion, setEmotion] = useState('neutral');
@@ -27,33 +32,65 @@ export function LiveView(): JSX.Element {
   const [lipSyncValue, setLipSyncValue] = useState(0);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(defaultAvatarConfig);
-  const [statusMessage, setStatusMessage] = useState('');
+  const [wallpaperDataUrl, setWallpaperDataUrl] = useState('');
+
+  const loadWallpaper = useCallback(async (filePath: string): Promise<void> => {
+    if (!window.electronAPI) return;
+    try {
+      const dataUrl = await window.electronAPI.readWallpaper(filePath);
+      setWallpaperDataUrl(dataUrl);
+    } catch (error) {
+      console.error('Failed to load wallpaper', error);
+    }
+  }, []);
 
   useEffect(() => {
     const loadAvatarConfig = async (): Promise<void> => {
-      if (!window.electronAPI) {
-        setStatusMessage('Electron IPC unavailable. Using mock avatar config.');
-        return;
-      }
-
+      if (!window.electronAPI) return;
       try {
         const content = await window.electronAPI.readConfig('avatar');
-        setAvatarConfig(JSON.parse(content) as AvatarConfig);
+        const parsedAvatar = JSON.parse(content) as AvatarConfig & { wallpaper_path?: string };
+        setAvatarConfig(parsedAvatar);
+        await loadWallpaper(parsedAvatar.wallpaper_path ?? '');
       } catch (error) {
         console.error('Failed to load avatar config', error);
-        setStatusMessage('Failed to load avatar.json. Using mock avatar config.');
+      }
+    };
+    void loadAvatarConfig();
+  }, [loadWallpaper]);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    const handleModelChange = async (): Promise<void> => {
+      try {
+        const content = await window.electronAPI!.readConfig('avatar');
+        const parsedAvatar = JSON.parse(content) as AvatarConfig & { wallpaper_path?: string };
+        setAvatarConfig(parsedAvatar);
+        await loadWallpaper(parsedAvatar.wallpaper_path ?? '');
+      } catch (error) {
+        console.error('Failed to reload avatar config', error);
       }
     };
 
-    void loadAvatarConfig();
-  }, []);
+    window.electronAPI.onModelChange(() => { void handleModelChange(); });
+    window.electronAPI.onWallpaperChange((filePath) => { void loadWallpaper(filePath); });
+
+    return () => {
+      window.electronAPI?.offModelChange();
+      window.electronAPI?.offWallpaperChange();
+    };
+  }, [loadWallpaper]);
 
   useEffect(() => {
     const handleMessage = (message: ResponseMessage): void => {
       setEmotion(message.emotion || 'neutral');
       setAudioBase64(message.audio || null);
       setComments((current) =>
-        [...current, { ...message.comment, reply: message.reply }].slice(-5),
+        [
+          ...current,
+          { id: ++commentIdCounter, ...message.comment, reply: message.reply },
+        ].slice(-5),
       );
     };
 
@@ -69,16 +106,13 @@ export function LiveView(): JSX.Element {
   }, [ws]);
 
   const postControl = async (path: '/start' | '/stop'): Promise<void> => {
-    setStatusMessage('');
     try {
       const response = await fetch(`${BACKEND_BASE_URL}${path}`, { method: 'POST' });
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
-      setStatusMessage(path === '/start' ? 'Started' : 'Stopped');
     } catch (error) {
       console.error(`Failed to call ${path}`, error);
-      setStatusMessage(`Failed to call ${path}`);
     }
   };
 
@@ -86,22 +120,36 @@ export function LiveView(): JSX.Element {
     setLipSyncValue(volume);
   }, []);
 
+  const rootStyle: CSSProperties = {
+    ...styles.root,
+    background: wallpaperDataUrl
+      ? undefined
+      : 'linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%)',
+    backgroundImage: wallpaperDataUrl ? `url('${wallpaperDataUrl}')` : undefined,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  };
+
   return (
-    <section style={styles.root}>
+    <section style={rootStyle}>
       <Live2DCanvas emotion={emotion} lipSyncValue={lipSyncValue} avatarConfig={avatarConfig} />
       <CommentOverlay comments={comments} />
       <AudioPlayer audioBase64={audioBase64} onVolumeChange={handleVolumeChange} />
-      <div style={styles.controls}>
-        <div style={connected ? styles.connected : styles.disconnected}>
-          {connected ? '接続中' : '切断'}
-        </div>
+      <div
+        style={{
+          ...styles.controls,
+          opacity: uiVisible ? 1 : 0,
+          pointerEvents: uiVisible ? 'auto' : 'none',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={connected ? styles.connected : styles.disconnected} />
         <button type="button" style={styles.button} onClick={() => void postControl('/start')}>
-          Start
+          ▶
         </button>
         <button type="button" style={styles.button} onClick={() => void postControl('/stop')}>
-          Stop
+          ■
         </button>
-        {statusMessage ? <div style={styles.status}>{statusMessage}</div> : null}
       </div>
     </section>
   );
@@ -113,42 +161,43 @@ const styles: Record<string, CSSProperties> = {
     width: '100%',
     height: '100%',
     overflow: 'hidden',
+    background: 'linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%)',
   },
   controls: {
     position: 'absolute',
-    top: 18,
-    left: 18,
+    bottom: 16,
+    left: 16,
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: 10,
+    gap: 8,
+    padding: '6px 8px',
     borderRadius: 8,
-    background: 'rgba(16, 20, 24, 0.76)',
+    background: 'rgba(0, 0, 0, 0.45)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
+    transition: 'opacity 300ms ease',
   },
   connected: {
-    color: '#9bdb7b',
-    fontSize: 13,
-    fontWeight: 700,
-    minWidth: 48,
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    background: '#7ee787',
   },
   disconnected: {
-    color: '#f19a8a',
-    fontSize: 13,
-    fontWeight: 700,
-    minWidth: 48,
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    background: '#ff7b72',
   },
   button: {
-    height: 32,
-    padding: '0 12px',
+    width: 26,
+    height: 24,
+    padding: 0,
     borderRadius: 6,
     border: '1px solid rgba(255, 255, 255, 0.14)',
-    background: '#202733',
+    background: 'rgba(255, 255, 255, 0.1)',
     color: '#f5f7fa',
     cursor: 'pointer',
-  },
-  status: {
-    color: '#b9c2cf',
     fontSize: 12,
+    lineHeight: '22px',
   },
 };

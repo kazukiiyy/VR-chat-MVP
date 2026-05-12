@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { LiveView } from './pages/LiveView';
 import { SettingsView } from './pages/SettingsView';
 
@@ -6,12 +6,66 @@ type Route = 'live' | 'settings';
 
 export default function App(): JSX.Element {
   const [route, setRoute] = useState<Route>('live');
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [uiVisible, setUiVisible] = useState(false);
+
+  const handleActivity = useCallback(() => {
+    setUiVisible(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setUiVisible(false), 3000);
+  }, []);
+
+  /** Live 画面: クリックで表示/非表示をトグル（マウス移動は handleActivity のみ） */
+  const handleLiveRootClick = useCallback(() => {
+    setUiVisible((wasVisible) => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      if (wasVisible) {
+        return false;
+      }
+      hideTimerRef.current = setTimeout(() => setUiVisible(false), 3000);
+      return true;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  const isLive = route === 'live';
+  const rootStyle: CSSProperties = isLive
+    ? {
+        ...styles.root,
+        ...styles.liveRoot,
+        cursor: uiVisible ? 'default' : 'none',
+      }
+    : styles.root;
+  const headerStyle: CSSProperties = isLive
+    ? {
+        ...styles.header,
+        ...styles.liveHeader,
+        opacity: uiVisible ? 1 : 0,
+        pointerEvents: uiVisible ? 'auto' : 'none',
+      }
+    : styles.header;
+  const mainStyle: CSSProperties = isLive ? { ...styles.main, ...styles.liveMain } : styles.main;
 
   return (
     <>
       <style>{globalStyles}</style>
-      <div style={styles.root}>
-        <header style={styles.header}>
+      <div
+        style={rootStyle}
+        onMouseMove={isLive ? handleActivity : undefined}
+        onClick={isLive ? handleLiveRootClick : undefined}
+      >
+        <header
+          style={headerStyle}
+          onClick={isLive ? (e) => e.stopPropagation() : undefined}
+        >
           <div style={styles.title}>VTuber Live</div>
           <nav style={styles.nav}>
             <button
@@ -30,7 +84,9 @@ export default function App(): JSX.Element {
             </button>
           </nav>
         </header>
-        <main style={styles.main}>{route === 'live' ? <LiveView /> : <SettingsView />}</main>
+        <main style={mainStyle}>
+          {isLive ? <LiveView uiVisible={uiVisible} /> : <SettingsView />}
+        </main>
       </div>
     </>
   );
@@ -46,6 +102,11 @@ const styles: Record<string, CSSProperties> = {
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
+  liveRoot: {
+    position: 'relative',
+    display: 'block',
+    height: '100vh',
+  },
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -53,6 +114,21 @@ const styles: Record<string, CSSProperties> = {
     padding: '0 18px',
     borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
     background: '#151a21',
+  },
+  liveHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0 18px',
+    height: 56,
+    borderBottom: 'none',
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%)',
+    transition: 'opacity 300ms ease',
   },
   title: {
     fontSize: 16,
@@ -82,6 +158,9 @@ const styles: Record<string, CSSProperties> = {
   },
   main: {
     minHeight: 0,
+  },
+  liveMain: {
+    height: '100%',
   },
 };
 
