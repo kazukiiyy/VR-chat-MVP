@@ -61,11 +61,13 @@ def _create_tts(settings: Settings) -> TTSPlugin:
 def _create_comment_source(settings: Settings) -> CommentSource | None:
     youtube = settings.app.youtube
     if youtube.api_key and youtube.stream_id:
+        print(f"[youtube] connecting: video_id={youtube.stream_id}")
         return YouTubeCommentSource(
             api_key=youtube.api_key,
             video_id=youtube.stream_id,
             polling_interval_sec=youtube.polling_interval_sec,
         )
+    print(f"[youtube] skipped: api_key={'set' if youtube.api_key else 'MISSING'}, stream_id={'set' if youtube.stream_id else 'MISSING'}")
     return None
 
 

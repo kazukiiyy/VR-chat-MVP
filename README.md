@@ -100,6 +100,30 @@ vtuber-live/
 - Node.js 20+
 - 使用するTTSエンジン（VOICEVOX等）を別途起動しておく
 
+### APIキーの設定
+
+プロジェクトルートに `.env` ファイルを作成し、使用するサービスのAPIキーを設定します。
+
+```
+OPENAI_API_KEY=sk-...        # OpenAI を使う場合
+CLAUDE_API_KEY=sk-ant-...    # Claude を使う場合
+YOUTUBE_API_KEY=AIza...      # YouTubeコメントを取得する場合
+ELEVENLABS_API_KEY=...       # ElevenLabs を使う場合
+```
+
+### YouTube接続の設定
+
+1. `.env` に `YOUTUBE_API_KEY` を設定
+2. アプリを起動 → Settings → YouTube タブ
+3. **視聴者がYouTubeで見るときのURL** を入力して Save
+   - 例: `https://www.youtube.com/watch?v=xxxxxxxxxx`
+   - OBSの「ストリームURL（rtmp://...）」や「バックアップURL」とは別物
+   - YouTube Studioでライブ配信を作成すると発行される視聴ページのURL
+4. Live画面で ▶ を押すと自動でコメント取得が始まる
+5. 配信ごとにURLが変わるので、毎回 Settings で更新して ■→▶ で再起動する
+
+YouTube APIキーはGoogle Cloud ConsoleでYouTube Data API v3を有効化して取得してください。
+
 ### 一括起動（推奨）
 
 プロジェクトルートで以下を実行するだけで、バックエンド・Vite・Electronがすべて起動します。
