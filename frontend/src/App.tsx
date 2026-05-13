@@ -48,8 +48,7 @@ export default function App(): JSX.Element {
     ? {
         ...styles.header,
         ...styles.liveHeader,
-        opacity: uiVisible ? 1 : 0,
-        pointerEvents: uiVisible ? 'auto' : 'none',
+        display: uiVisible ? 'flex' : 'none',
       }
     : styles.header;
   const mainStyle: CSSProperties = isLive ? { ...styles.main, ...styles.liveMain } : styles.main;

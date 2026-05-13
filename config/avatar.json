@@ -1,11 +1,49 @@
 {
   "model_path": "./models/your_model/model.model3.json",
   "emotions": {
-    "happy":     { "expression": "happy.exp3.json",     "motion_group": "Idle", "motion_index": 1, "params": { "ParamEyeLOpen": 1.0, "ParamMouthOpenY": 0.3, "ParamBrowLY": 0.5 } },
-    "sad":       { "expression": "sad.exp3.json",       "motion_group": "Idle", "motion_index": 2, "params": { "ParamEyeLOpen": 0.7, "ParamBrowLY": -0.5 } },
-    "angry":     { "expression": "angry.exp3.json",     "motion_group": "Idle", "motion_index": 3, "params": { "ParamBrowLY": -0.8, "ParamMouthOpenY": 0.2 } },
-    "surprised": { "expression": "surprised.exp3.json", "motion_group": "Idle", "motion_index": 4, "params": { "ParamEyeLOpen": 1.2, "ParamBrowLY": 0.8 } },
-    "neutral":   { "expression": "neutral.exp3.json",   "motion_group": "Idle", "motion_index": 0, "params": {} }
+    "happy": {
+      "expression": "happy.exp3.json",
+      "motion_group": "Idle",
+      "motion_index": 1,
+      "params": {
+        "ParamEyeLOpen": 1,
+        "ParamMouthOpenY": 0.3,
+        "ParamBrowLY": 0.5
+      }
+    },
+    "sad": {
+      "expression": "sad.exp3.json",
+      "motion_group": "Idle",
+      "motion_index": 2,
+      "params": {
+        "ParamEyeLOpen": 0.7,
+        "ParamBrowLY": -0.5
+      }
+    },
+    "angry": {
+      "expression": "angry.exp3.json",
+      "motion_group": "Idle",
+      "motion_index": 3,
+      "params": {
+        "ParamBrowLY": -0.8,
+        "ParamMouthOpenY": 0.2
+      }
+    },
+    "surprised": {
+      "expression": "surprised.exp3.json",
+      "motion_group": "Idle",
+      "motion_index": 4,
+      "params": {
+        "ParamEyeLOpen": 1.2,
+        "ParamBrowLY": 0.8
+      }
+    },
+    "neutral": {
+      "expression": "neutral.exp3.json",
+      "motion_group": "Idle",
+      "motion_index": 0,
+      "params": {}
+    }
   },
   "lipsync": {
     "param": "ParamMouthOpenY",
@@ -16,5 +54,6 @@
     "group": "Idle",
     "index": 0,
     "interval_sec": 8
-  }
+  },
+  "wallpaper_path": "/Users/kazuki/Downloads/61066029-960f-40b8-84fc-821f2415ec61_base_resized.jpg"
 }

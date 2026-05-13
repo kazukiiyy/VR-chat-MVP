@@ -1,0 +1,3 @@
+[mcp_servers.codex]
+args = ["mcp-server"]
+command = "codex"

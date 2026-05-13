@@ -36,7 +36,8 @@ class VoicevoxPlugin(TTSPlugin):
                 )
                 synthesis_response.raise_for_status()
                 return synthesis_response.content
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            print(f"[voicevox] synthesis failed: {exc}")
             return _silent_wav()
 
 

@@ -100,20 +100,36 @@ vtuber-live/
 - Node.js 20+
 - 使用するTTSエンジン（VOICEVOX等）を別途起動しておく
 
-### バックエンド起動
+### 一括起動（推奨）
+
+プロジェクトルートで以下を実行するだけで、バックエンド・Vite・Electronがすべて起動します。
+
+```bash
+./start.sh
+```
+
+Ctrl+C で全プロセスを一括停止できます。
+
+### 個別起動
+
+```bash
+# ターミナル1: バックエンド
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# ターミナル2: Vite dev server
+cd frontend && npm run dev
+
+# ターミナル3: Electron（Vite起動後に実行）
+cd frontend && npm run electron:dev
+```
+
+### 依存パッケージのインストール
+
+初回のみ実行してください。
 
 ```bash
 pip install -r requirements.txt
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-```
-
-### フロントエンド起動（開発）
-
-```bash
-cd frontend
-npm install
-npm run dev          # Vite dev server
-npm run electron:dev # Electron で開く（別ターミナル）
+cd frontend && npm install
 ```
 
 ## 6. LLM / TTS の切り替え方法
@@ -147,6 +163,32 @@ npm run electron:dev # Electron で開く（別ターミナル）
 ### REST API
 
 - `GET /status` — パイプラインの稼働状態
-- `POST /start` — パイプライン開始
+- `POST /start` — パイプライン開始（設定を再読み込みして再構築）
 - `POST /stop` — パイプライン停止
+- `POST /comment` — コメントを手動注入（テスト用）
+- `GET /voicevox/speakers` — VOICEVOX話者一覧取得
 - `WS /ws` — WebSocketエンドポイント
+
+## 9. テスト
+
+### 手動コメント注入
+
+`./start.sh` 起動後、▶ ボタンでパイプラインを開始してから実行します。
+
+```bash
+python3 comment.py "こんにちは！"
+python3 comment.py "田中太郎" "お久しぶり！2ヶ月ぶりですね"
+```
+
+### 単体テスト
+
+```bash
+# VOICEVOX テスト（VOICEVOXアプリ起動中に実行）
+/usr/bin/python3 tests/test_voicevox.py
+
+# LLM テスト（バックエンド不要、.env のAPIキーのみ必要）
+/usr/bin/python3 tests/test_llm.py
+
+# パイプライン統合テスト（start.sh 起動中 + ▶ を押した後に実行）
+/usr/bin/python3 tests/test_pipeline.py
+```

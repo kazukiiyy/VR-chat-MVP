@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioPlayer } from '../components/AudioPlayer';
 import { type AvatarConfig, Live2DCanvas } from '../components/Live2DCanvas';
 import { CommentOverlay, type CommentItem } from '../components/CommentOverlay';
@@ -39,6 +39,8 @@ export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(defaultAvatarConfig);
   const [wallpaperDataUrl, setWallpaperDataUrl] = useState('');
+  const [controlToast, setControlToast] = useState<{ text: string; tone: 'ok' | 'err' } | null>(null);
+  const toastClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadWallpaper = useCallback(async (filePath: string): Promise<void> => {
     if (!window.electronAPI) return;
@@ -140,6 +142,21 @@ export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
     return () => window.clearInterval(intervalId);
   }, [fetchPipelineStatus]);
 
+  useEffect(() => {
+    return () => {
+      if (toastClearRef.current) clearTimeout(toastClearRef.current);
+    };
+  }, []);
+
+  const showControlToast = useCallback((message: string, tone: 'ok' | 'err' = 'ok'): void => {
+    if (toastClearRef.current) clearTimeout(toastClearRef.current);
+    setControlToast({ text: message, tone });
+    toastClearRef.current = setTimeout(() => {
+      setControlToast(null);
+      toastClearRef.current = null;
+    }, 3500);
+  }, []);
+
   const postControl = async (path: '/start' | '/stop'): Promise<void> => {
     try {
       const response = await fetch(`${BACKEND_BASE_URL}${path}`, { method: 'POST' });
@@ -148,8 +165,13 @@ export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
       }
       const data = (await response.json()) as PipelineStatusPayload;
       applyPipelineStatus(data);
+      showControlToast(path === '/start' ? 'ライブを開始しました' : 'ライブを停止しました');
     } catch (error) {
       console.error(`Failed to call ${path}`, error);
+      showControlToast(
+        path === '/start' ? 'ライブ開始に失敗しました（バックエンドを確認してください）' : '停止に失敗しました',
+        'err',
+      );
       void fetchPipelineStatus();
     }
   };
@@ -170,6 +192,18 @@ export function LiveView({ uiVisible }: LiveViewProps): JSX.Element {
 
   return (
     <section style={rootStyle}>
+      {controlToast ? (
+        <div
+          style={{
+            ...styles.controlToast,
+            ...(controlToast.tone === 'err' ? styles.controlToastErr : styles.controlToastOk),
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          {controlToast.text}
+        </div>
+      ) : null}
       <Live2DCanvas emotion={emotion} lipSyncValue={lipSyncValue} avatarConfig={avatarConfig} />
       <CommentOverlay comments={comments} />
       <AudioPlayer audioBase64={audioBase64} onVolumeChange={handleVolumeChange} />
@@ -234,6 +268,29 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
     overflow: 'hidden',
     background: 'linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%)',
+  },
+  controlToast: {
+    position: 'fixed',
+    left: '50%',
+    bottom: 72,
+    transform: 'translateX(-50%)',
+    zIndex: 300,
+    maxWidth: 'min(420px, calc(100vw - 32px))',
+    padding: '10px 16px',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#f5f7fa',
+    background: 'rgba(22, 27, 34, 0.92)',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
+    pointerEvents: 'none',
+    textAlign: 'center',
+  },
+  controlToastOk: {
+    border: '1px solid rgba(126, 231, 135, 0.35)',
+  },
+  controlToastErr: {
+    border: '1px solid rgba(255, 123, 114, 0.45)',
   },
   controls: {
     position: 'absolute',

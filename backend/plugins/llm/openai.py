@@ -9,6 +9,8 @@ from backend.plugins.llm.base import LLMPlugin, LLMResponse, parse_llm_response,
 
 class OpenAIPlugin(LLMPlugin):
     def __init__(self, api_key: str, model: str, timeout_sec: float = 60.0) -> None:
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is not set. Add it to your .env file.")
         self.api_key = api_key
         self.model = model
         self.timeout_sec = timeout_sec
@@ -19,15 +21,6 @@ class OpenAIPlugin(LLMPlugin):
         system_prompt: str,
         response_schema: dict[str, Any],
     ) -> LLMResponse:
-        if not self.api_key:
-            latest = messages[-1]["content"] if messages else ""
-            return LLMResponse(
-                text=f"コメントありがとう！「{latest}」っていい話題だね。",
-                emotion="happy",
-                voice_style="normal",
-                extra={"mock": True},
-            )
-
         try:
             async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
                 response = await client.post(
@@ -53,5 +46,10 @@ class OpenAIPlugin(LLMPlugin):
             raise RuntimeError(f"OpenAI API request failed: {exc}") from exc
 
         payload = response.json()
-        raw_text = payload["choices"][0]["message"]["content"]
+        choices = payload.get("choices")
+        if not choices or not isinstance(choices, list):
+            raise RuntimeError(f"Unexpected OpenAI response: {payload}")
+        raw_text = choices[0].get("message", {}).get("content", "")
+        if not raw_text:
+            raise RuntimeError(f"Empty content in OpenAI response: {payload}")
         return parse_llm_response(raw_text)

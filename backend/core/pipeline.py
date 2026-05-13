@@ -24,22 +24,6 @@ class CommentSource(ABC):
         ...
 
 
-class MockYouTubeCommentSource(CommentSource):
-    def __init__(self, polling_interval_sec: float) -> None:
-        self.polling_interval_sec = polling_interval_sec
-        self._counter = 0
-
-    async def poll(self) -> list[dict[str, Any]]:
-        await asyncio.sleep(self.polling_interval_sec)
-        self._counter += 1
-        return [
-            {
-                "author": f"viewer{self._counter}",
-                "text": f"モックコメント {self._counter}",
-            }
-        ]
-
-
 class Pipeline:
     def __init__(
         self,
@@ -51,9 +35,7 @@ class Pipeline:
         self.app_settings = app_settings
         self.llm = llm
         self.tts = tts
-        self.comment_source = comment_source or MockYouTubeCommentSource(
-            app_settings.youtube.polling_interval_sec
-        )
+        self.comment_source = comment_source
         self.queue = CommentQueue()
         self.context = ContextManager()
         self._producer_task: asyncio.Task[None] | None = None
@@ -69,7 +51,9 @@ class Pipeline:
         if self._running:
             return
         self._running = True
-        self._producer_task = asyncio.create_task(self._poll_comments())
+        self._producer_task = (
+            asyncio.create_task(self._poll_comments()) if self.comment_source is not None else None
+        )
         self._consumer_task = asyncio.create_task(self._process_comments())
 
     async def stop(self) -> None:
@@ -77,7 +61,7 @@ class Pipeline:
             return
         self._running = False
         for task in (self._producer_task, self._consumer_task):
-            if task:
+            if task is not None:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -98,9 +82,11 @@ class Pipeline:
         }
 
     async def _poll_comments(self) -> None:
+        source = self.comment_source
+        assert source is not None
         while self._running:
             try:
-                comments = await self.comment_source.poll()
+                comments = await source.poll()
                 for comment in comments:
                     await self.queue.put(comment)
             except asyncio.CancelledError:

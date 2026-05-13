@@ -9,6 +9,8 @@ from backend.plugins.llm.base import LLMPlugin, LLMResponse, parse_llm_response,
 
 class ClaudePlugin(LLMPlugin):
     def __init__(self, api_key: str, model: str, timeout_sec: float = 60.0) -> None:
+        if not api_key:
+            raise ValueError("CLAUDE_API_KEY is not set. Add it to your .env file.")
         self.api_key = api_key
         self.model = model
         self.timeout_sec = timeout_sec
@@ -19,15 +21,6 @@ class ClaudePlugin(LLMPlugin):
         system_prompt: str,
         response_schema: dict[str, Any],
     ) -> LLMResponse:
-        if not self.api_key:
-            latest = messages[-1]["content"] if messages else ""
-            return LLMResponse(
-                text=f"コメントありがとう！「{latest}」について、配信で楽しく話していくね。",
-                emotion="happy",
-                voice_style="normal",
-                extra={"mock": True},
-            )
-
         try:
             async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
                 response = await client.post(

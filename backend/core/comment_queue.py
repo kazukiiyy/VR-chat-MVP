@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 
 
 class CommentQueue:
     def __init__(self) -> None:
-        self._queue: asyncio.PriorityQueue[tuple[int, float, dict[str, Any]]] = asyncio.PriorityQueue()
+        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
     async def put(self, comment: dict[str, Any]) -> None:
-        await self._queue.put((0, time.time(), comment))
+        await self._queue.put(comment)
 
     async def get(self) -> dict[str, Any]:
-        _priority, _timestamp, comment = await self._queue.get()
-        return comment
+        return await self._queue.get()
 
     def qsize(self) -> int:
         return self._queue.qsize()
